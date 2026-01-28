@@ -1,0 +1,23 @@
+/* Reset */
+* {
+  box-sizing: border-box;
+}
+
+/* Prevent horizontal overflow everywhere */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Root container */
+#root {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Optional: nicer default font */
+body {
+  font-family: Inter, Arial, sans-serif;
+}
