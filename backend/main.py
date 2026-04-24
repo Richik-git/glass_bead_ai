@@ -1,31 +1,30 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional # Import this for safer types
+from typing import Optional
 import os
 import json
 import re
 from dotenv import load_dotenv
-from openai import OpenAI
+from groq import Groq  # 👈 Change 1: Import Groq
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+# 👈 Change 2: Initialize Groq Client
+client = Groq(
+    api_key=os.getenv("GROQ_API_KEY"),
 )
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Temporarily allow all for testing
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- THE FIX: Use Optional and a default value ---
 class ExploreRequest(BaseModel):
     topic: str
     context: Optional[str] = None 
@@ -35,44 +34,47 @@ def extract_json(text):
     return match.group(0) if match else None
 
 def generate_explanation_and_connections(topic, context=None):
-    context_instruction = f"Specifically, explain how this relates back to {context}." if context else ""
+    context_instruction = f"Specifically link this back to {context}." if context else ""
     
     prompt = f"""
-    Explain "{topic}" using a simple real-world analogy.
-    {context_instruction}
+    Explain "{topic}" using a direct real-world analogy.
     
-    Return ONLY valid JSON:
+    TASK: 
+    1. Provide a core analogy for "{topic}".
+    2. Identify 4 NEW concepts from COMPLETELY DIFFERENT domains (e.g., if the topic is IT, pick something from Art, History, or Biology) that use the same logic as "{topic}".
+    
+    STRICT RULE: The 'label' in connections MUST NOT be the word "{topic}". It must be a different concept.
+
+    Return ONLY JSON:
     {{
-      "explanation": "Think of {topic} as...",
+      "explanation": "...",
       "connections": [
         {{
-          "label": "Concept",
-          "domain": "Field",
-          "relation": "Link",
-          "explanation": "Comparison"
+          "label": "Name of Different Concept(Known Intuitive Concept)", 
+          "domain": "Common Known Field",
+          "relation": "Why they are similar (in simple words)",
+          "explanation": "Brief metaphor linking them."
         }}
       ]
     }}
     """
 
-    response = client.chat.completions.create(
-        model="deepseek/deepseek-chat",
+    chat_completion = client.chat.completions.create(
         messages=[
-            {"role": "system", "content": "You are a teacher who explains concepts through analogies."},
+            {"role": "system", "content": "You are a teacher who explains complex ideas using simple, 3-point analogies. You follow formatting instructions exactly."},
             {"role": "user", "content": prompt}
         ],
-        response_format={ "type": "json_object" },
-        max_tokens=1000,
-        temperature=0.5
+        model="llama-3.3-70b-versatile",
+        response_format={"type": "json_object"},
+        temperature=0.5, # Slightly higher to allow for descriptive language
+        max_tokens=800,  
     )
-    return response.choices[0].message.content
+    return chat_completion.choices[0].message.content
 
 @app.post("/explore")
 async def explore_topic(request: ExploreRequest):
     try:
-        # Debug print to see what's actually arriving in your terminal
-        print(f"RECEIVED DATA: topic={request.topic}, context={request.context}")
-        
+        print(f"GROQ SEARCH: {request.topic}")
         raw_result = generate_explanation_and_connections(request.topic, request.context)
         clean_json = extract_json(raw_result)
         
@@ -81,7 +83,6 @@ async def explore_topic(request: ExploreRequest):
 
         data = json.loads(clean_json)
 
-        # Build Graph Data
         nodes = [{"id": "main", "label": request.topic, "domain": "Core Concept"}]
         edges = []
 
@@ -105,7 +106,7 @@ async def explore_topic(request: ExploreRequest):
             "story": data.get("explanation", "No explanation generated.")
         }
     except Exception as e:
-        print(f"ERROR: {str(e)}")
+        print(f"GROQ ERROR: {str(e)}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
