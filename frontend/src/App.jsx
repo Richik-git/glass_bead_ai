@@ -1,251 +1,214 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import cytoscape from "cytoscape";
 
 const DOMAIN_COLORS = {
-  Mathematics: "#2563eb", // blue
-  Music: "#7c3aed",       // purple
-  History: "#ea580c",     // orange
-  Philosophy: "#059669",  // green
-  Sociology: "#db2777",   // pink
-  Default: "#374151",     // gray
+  "Core Concept": "#111827",
+  Mathematics: "#2563eb",
+  Music: "#7c3aed",
+  History: "#ea580c",
+  Philosophy: "#059669",
+  Physics: "#be185d",
+  Art: "#db2777",
+  Default: "#64748b",
 };
-
-const getDomainColor = (domain) => {
-  if (!domain) return DOMAIN_COLORS.Default;
-  return DOMAIN_COLORS[domain] || DOMAIN_COLORS.Default;
-};
-
 
 function App() {
   const [topic, setTopic] = useState("");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedElement, setSelectedElement] = useState(null);
+  const cyRef = useRef(null);
 
-  const exploreTopic = async () => {
-    if (!topic) return;
-
+  // Updated to handle context (the 'parent' topic)
+  const exploreTopic = async (targetTopic = topic, context = null) => {
+    const searchTopic = targetTopic || topic;
+    if (!searchTopic) return;
+    
     setLoading(true);
-    setData(null);
-    setSelectedNode(null);
-
-    const response = await fetch("http://127.0.0.1:8000/explore", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ topic }),
-    });
-
-    const result = await response.json();
-
-    setData(result);
-    setSelectedNode(result.nodes[0]); // default selection
-    setLoading(false);
+    try {
+      const response = await fetch("http://127.0.0.1:8000/explore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          topic: searchTopic,
+          context: context // Sending context to backend
+        }),
+      });
+      const result = await response.json();
+      
+      if (result.error) {
+        alert("AI Error: " + result.error);
+      } else {
+        setData(result);
+        setTopic(searchTopic); // Sync input field with new topic
+        setSelectedElement({ 
+          type: 'node', 
+          id: 'main',
+          label: result.nodes[0].label,
+          domain: "Core Concept",
+          content: result.story 
+        });
+      }
+    } catch (err) {
+      console.error("Network Error:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    if (!data) return;
+    const container = document.getElementById("graph");
+    if (!data || !container) return;
 
-    const cy = cytoscape({
-      container: document.getElementById("graph"),
-      elements: [
-        // Nodes
-        ...data.nodes.map((node) => ({
-          data: {
-            id: node.id,
-            label: node.label,
-            domain: node.domain,
-          },
-        })),
+    if (cyRef.current) cyRef.current.destroy();
 
-        // Edges
-        ...data.edges.map((edge) => ({
-          data: {
-            source: edge.source,
-            target: edge.target,
-            label: edge.type,
-          },
-        })),
-      ],
-      style: [
-        {
-          selector: "node",
-          style: {
-            label: "data(label)",
-            "text-valign": "center",
-            "text-halign": "center",
-            "background-color": "#6366f1",
-            color: "#ffffff",
-            "font-size": "12px",
-            width: "label",
-            padding: "10px",
-            "text-wrap": "wrap",
-            "text-max-width": "80px",
-            shape: "round-rectangle",
-          },
+    try {
+      const cy = cytoscape({
+        container: container,
+        elements: {
+          nodes: data.nodes.map((n) => ({ data: { ...n } })),
+          edges: data.edges.map((e) => ({ data: { ...e } })),
         },
-        {
-          selector: "edge",
-          style: {
-            label: "data(label)",
-            "curve-style": "bezier",
-            "target-arrow-shape": "triangle",
-            "line-color": "#9ca3af",
-            "target-arrow-color": "#9ca3af",
-            "font-size": "10px",
-            "text-background-color": "#ffffff",
-            "text-background-opacity": 1,
-            "text-background-padding": "3px",
+        style: [
+          {
+            selector: "node",
+            style: {
+              label: "data(label)",
+              "text-valign": "center",
+              "background-color": (ele) => DOMAIN_COLORS[ele.data("domain")] || DOMAIN_COLORS.Default,
+              color: "#fff",
+              "font-size": "10px",
+              width: "70px",
+              height: "70px",
+              "text-wrap": "wrap",
+              "text-max-width": "60px",
+              "transition-property": "width, height",
+              "transition-duration": "0.3s"
+            },
           },
-        },
-      ],
-      layout: {
-        name: "breadthfirst",
-        directed: true,
-        padding: 20,
-      },
-    });
+          {
+            selector: "node:selected",
+            style: {
+                "border-width": "4px",
+                "border-color": "#000",
+                width: "80px",
+                height: "80px"
+            }
+          },
+          {
+            selector: "edge",
+            style: {
+              width: 2,
+              label: "data(type)",
+              "font-size": "8px",
+              "curve-style": "bezier",
+              "target-arrow-shape": "triangle",
+              "line-color": "#cbd5e1",
+              "target-arrow-color": "#cbd5e1",
+              "text-background-opacity": 1,
+              "text-background-color": "#ffffff",
+            },
+          },
+        ],
+        layout: { name: "cose", padding: 40, animate: true },
+      });
 
-    cy.on("tap", "node", (event) => {
-      setSelectedNode(event.target.data());
-    });
+      cy.on("tap", "node", (evt) => {
+        const node = evt.target.data();
+        setSelectedElement({ 
+          type: 'node', 
+          id: node.id,
+          label: node.label, 
+          domain: node.domain, 
+          content: node.id === 'main' ? data.story : node.explanation 
+        });
+      });
 
-    return () => cy.destroy();
+      cyRef.current = cy;
+    } catch (e) { console.error(e); }
+
+    return () => { if (cyRef.current) cyRef.current.destroy(); };
   }, [data]);
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>Glass Bead AI</h1>
-      <p style={styles.subtitle}>
-        Explore hidden connections between ideas
-      </p>
+      <header style={styles.header}>
+        <h1 style={styles.title}>💎 Glass Bead AI</h1>
+        <p style={styles.subtitle}>Click any connection to dive deeper into the metaphor web</p>
+      </header>
 
       <div style={styles.inputRow}>
         <input
-          type="text"
-          placeholder="Enter a topic (e.g. Fourier Transform)"
+          style={styles.input}
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          style={styles.input}
+          placeholder="Topic (e.g. Entropy)..."
+          onKeyDown={(e) => e.key === 'Enter' && exploreTopic()}
         />
-        <button onClick={exploreTopic} style={styles.button}>
-          Explore
+        <button style={styles.button} onClick={() => exploreTopic()} disabled={loading}>
+          {loading ? "Synthesizing..." : "Explore"}
         </button>
       </div>
 
-      {loading && <p>Thinking...</p>}
-
-      {data && selectedNode && (
-        <div style={styles.card}>
-          <h2
-            style={{
-              color: getDomainColor(selectedNode.domain),
-            }}
-          >
-            {selectedNode.label}
-          </h2>
-          <p>
-            <span
-              style={{
-                ...styles.badge,
-                backgroundColor: getDomainColor(selectedNode.domain) + "20",
-                color: getDomainColor(selectedNode.domain),
-              }}
-            >
-              {selectedNode.domain}
-            </span>
-          </p>
-
-          <div style={{ marginBottom: "1rem" }}>
-            <span style={{ ...styles.badge, ...styles.typeBadge }}>
-              {data.edges[0].type}
-            </span>
-
-            <span style={{ ...styles.badge, ...styles.confidenceBadge }}>
-              Confidence: {Math.round(data.edges[0].confidence * 100)}%
-            </span>
+      {!loading && data && (
+        <div style={styles.contentLayout}>
+          <div style={styles.cardSection}>
+            {selectedElement && (
+              <div style={styles.storyCard}>
+                <span style={{
+                  ...styles.badge, 
+                  backgroundColor: (DOMAIN_COLORS[selectedElement.domain] || '#000') + '20', 
+                  color: DOMAIN_COLORS[selectedElement.domain]
+                }}>
+                  {selectedElement.domain}
+                </span>
+                <h2 style={styles.cardTitle}>{selectedElement.label}</h2>
+                <p style={styles.storyText}>{selectedElement.content}</p>
+                
+                {/* 🔥 NEW: THE DEEP DIVE BUTTON */}
+                {selectedElement.id !== 'main' && (
+                    <button 
+                        style={styles.expandButton}
+                        onClick={() => exploreTopic(selectedElement.label, data.nodes[0].label)}
+                    >
+                        Explore {selectedElement.label} →
+                    </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <p>
-            <strong>Explanation</strong><br />
-            {data.edges[0].explanation}
-          </p>
+          <div style={styles.graphSection}>
+            <div id="graph" style={styles.graphCanvas} />
+            <p style={styles.graphHint}>The graph is interactive. Select a node to see its metaphor.</p>
+          </div>
         </div>
       )}
-
-      {data && (
-        <div
-          id="graph"
-          style={{
-            width: "100%",
-            maxWidth: "100%",
-            height: "260px",
-            marginTop: "2rem",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            background: "#fafafa",
-          }}
-        />
-      )}
+      
+      {loading && <div style={styles.loader}>✨ Connecting the beads of knowledge...</div>}
     </div>
   );
 }
 
 const styles = {
-  container: {
-    padding: "2rem",
-    fontFamily: "Inter, Arial, sans-serif",
-    maxWidth: "900px",
-    margin: "0 auto",
-    width: "100%",
-  },
-  title: {
-    marginBottom: "0.2rem",
-  },
-  subtitle: {
-    color: "#555",
-    marginBottom: "1.5rem",
-  },
-  inputRow: {
-    display: "flex",
-    gap: "0.5rem",
-    marginBottom: "2rem",
-  },
-  input: {
-    flex: 1,
-    padding: "0.6rem",
-    fontSize: "1rem",
-  },
-  button: {
-    padding: "0.6rem 1rem",
-    fontSize: "1rem",
-    cursor: "pointer",
-  },
-  card: {
-    background: "#f9f9f9",
-    padding: "1.5rem",
-    borderRadius: "8px",
-    lineHeight: "1.6",
-  },
-  badge: {
-    display: "inline-block",
-    padding: "4px 10px",
-    borderRadius: "999px",
-    fontSize: "12px",
-    fontWeight: "600",
-    marginRight: "8px",
-  },
-
-  typeBadge: {
-    backgroundColor: "#e0e7ff",
-    color: "#3730a3",
-  },
-
-  confidenceBadge: {
-    backgroundColor: "#dcfce7",
-    color: "#166534",
-  },
+  container: { padding: "2rem", maxWidth: "1200px", margin: "0 auto", fontFamily: "sans-serif", color: "#1e293b" },
+  header: { textAlign: "center", marginBottom: "2rem" },
+  title: { fontSize: "2.8rem", margin: 0 },
+  subtitle: { color: "#64748b", marginTop: "0.5rem" },
+  inputRow: { display: "flex", gap: "1rem", marginBottom: "3rem", justifyContent: "center" },
+  input: { padding: "0.8rem 1.2rem", width: "400px", borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "1rem" },
+  button: { padding: "0.8rem 2rem", borderRadius: "12px", backgroundColor: "#0f172a", color: "white", cursor: "pointer", border: "none", fontWeight: "600" },
+  contentLayout: { display: "grid", gridTemplateColumns: "400px 1fr", gap: "2rem", alignItems: "start" },
+  cardSection: { position: "sticky", top: "2rem" },
+  storyCard: { padding: "2rem", backgroundColor: "#f8fafc", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" },
+  cardTitle: { marginTop: "1rem", fontSize: "1.8rem", color: "#0f172a" },
+  storyText: { lineHeight: "1.8", color: "#334155", fontSize: "1.05rem" },
+  expandButton: { marginTop: "1.5rem", width: "100%", padding: "0.8rem", borderRadius: "8px", backgroundColor: "#3b82f6", color: "white", border: "none", cursor: "pointer", fontWeight: "600", transition: "background 0.2s" },
+  graphCanvas: { height: "550px", backgroundColor: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0" },
+  badge: { padding: "4px 12px", borderRadius: "99px", fontSize: "0.7rem", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.05em" },
+  graphSection: { display: "flex", flexDirection: "column" },
+  graphHint: { textAlign: "center", fontSize: "0.85rem", color: "#94a3b8", marginTop: "1rem" },
+  loader: { textAlign: "center", padding: "100px", fontSize: "1.2rem", color: "#64748b" }
 };
 
 export default App;
