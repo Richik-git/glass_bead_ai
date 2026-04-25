@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import cytoscape from "cytoscape";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Bookmark, Trash2, ArrowRight, Zap, Layers, BookOpen } from "lucide-react";
+import { Sparkles, Bookmark, Trash2, ArrowRight, Zap, Layers, BookOpen, Search, Cpu } from "lucide-react";
 
 const DOMAIN_COLORS = {
-  "Core Concept": "#3b82f6",
-  Mathematics: "#6366f1",
-  Music: "#ec4899",
-  History: "#f97316",
-  Philosophy: "#10b981",
-  Physics: "#f43f5e",
+  "Core Concept": "#60a5fa",
+  Mathematics: "#818cf8",
+  Music: "#f472b6",
+  History: "#fb923c",
+  Philosophy: "#34d399",
+  Physics: "#fb7185",
   Default: "#94a3b8",
 };
 
@@ -18,6 +18,8 @@ function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedElement, setSelectedElement] = useState(null);
+  // 🔥 Tooltip state for edge magnification
+  const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
   const cyRef = useRef(null);
 
   const [library, setLibrary] = useState(() => {
@@ -25,7 +27,6 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // --- 🔥 FIX 1: SAVE FULL GRAPH DATA TO LIBRARY ---
   const saveToLibrary = () => {
     if (!data || !topic) return;
     if (library.some(item => item.topic === topic)) return;
@@ -35,7 +36,6 @@ function App() {
       topic: topic, 
       content: data.story, 
       domain: data.nodes[0]?.domain || "Core Concept",
-      // We must save these so the graph can be rebuilt later!
       nodes: data.nodes,
       edges: data.edges 
     };
@@ -51,21 +51,10 @@ function App() {
     localStorage.setItem("glass_bead_library", JSON.stringify(updated));
   };
 
-  // --- 🔥 FIX 2: HANDLER TO OPEN VAULT ITEMS PROPERLY ---
   const handleVaultClick = (item) => {
     setTopic(item.topic);
-    // Setting data here triggers the useEffect graph builder automatically
-    setData({
-      story: item.content,
-      nodes: item.nodes,
-      edges: item.edges
-    });
-    setSelectedElement({ 
-      id: 'main', 
-      label: item.topic, 
-      domain: item.domain, 
-      content: item.content 
-    });
+    setData({ story: item.content, nodes: item.nodes, edges: item.edges });
+    setSelectedElement({ id: 'main', label: item.topic, domain: item.domain, content: item.content });
   };
 
   const exploreTopic = async (targetTopic = topic, context = null) => {
@@ -114,44 +103,63 @@ function App() {
             "text-outline-width": 3,
             "text-outline-color": (ele) => DOMAIN_COLORS[ele.data("domain")] || DOMAIN_COLORS.Default,
             "background-color": (ele) => DOMAIN_COLORS[ele.data("domain")] || DOMAIN_COLORS.Default,
-            width: (ele) => ele.data("id") === "main" ? "110px" : "90px",
-            height: (ele) => ele.data("id") === "main" ? "110px" : "90px",
-            "border-width": 4,
-            "border-color": "#ffffff",
-            "border-opacity": 0.9,
-            "shadow-blur": 12,
-            "shadow-color": "rgba(0,0,0,0.3)",
+            width: (ele) => ele.data("id") === "main" ? "105px" : "85px",
+            height: (ele) => ele.data("id") === "main" ? "105px" : "85px",
+            "border-width": 2,
+            "border-color": "rgba(255,255,255,0.4)",
+            "shadow-blur": 15,
+            "shadow-color": (ele) => DOMAIN_COLORS[ele.data("domain")] || "#000",
+            "shadow-opacity": 0.5,
           },
         },
         {
           selector: "edge",
           style: {
-            width: 4,
-            "line-color": "#475569",
-            "target-arrow-color": "#475569",
+            width: 2,
+            "line-color": "rgba(255,255,255,0.15)",
+            "target-arrow-color": "rgba(255,255,255,0.15)",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
             label: "data(type)",
-            "text-wrap": "wrap",
-            "text-max-width": "60px",
-            "font-size": "10px",
+            "font-size": "9px",
             "font-weight": "700",
-            "color": "#1e293b",
+            "color": "#94a3b8",
             "text-background-opacity": 1,
-            "text-background-color": "#f1f5f9",
-            "text-background-padding": "4px",
-            "text-background-shape": "roundrectangle",
+            "text-background-color": "#0f172a", 
+            "text-background-padding": "3px",
             "text-rotation": "autorotate",
           },
         },
       ],
       layout: { 
         name: "cose", 
-        padding: 100, 
-        animate: true,
-        nodeRepulsion: 8000, 
+        padding: 60, 
+        nodeRepulsion: 10000, 
         idealEdgeLength: 150,
       },
+    });
+
+    // 🔥 EDGE HOVER MAGNIFICATION LOGIC
+    cy.on("mouseover", "edge", (evt) => {
+      const edge = evt.target;
+      setTooltip({
+        show: true,
+        text: edge.data("type"),
+        x: evt.renderedPosition.x,
+        y: evt.renderedPosition.y
+      });
+    });
+
+    cy.on("mousemove", "edge", (evt) => {
+      setTooltip(prev => ({
+        ...prev,
+        x: evt.renderedPosition.x,
+        y: evt.renderedPosition.y
+      }));
+    });
+
+    cy.on("mouseout", "edge", () => {
+      setTooltip({ show: false, text: "", x: 0, y: 0 });
     });
 
     cy.on("tap", "node", (evt) => {
@@ -167,52 +175,81 @@ function App() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.blob1}></div>
-      <div style={styles.blob2}></div>
+      <style>{`
+        .edge-tooltip {
+          position: absolute;
+          pointer-events: none;
+          background: rgba(15, 23, 42, 0.95);
+          backdrop-filter: blur(12px);
+          color: #fff;
+          padding: 10px 18px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          font-size: 14px;
+          font-weight: 800;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          white-space: nowrap;
+          transform: translate(-50%, -120%);
+        }
+      `}</style>
+
+      <div style={styles.aurora1}></div>
+      <div style={styles.aurora2}></div>
 
       <div style={styles.container}>
         <header style={styles.header}>
-          <div style={styles.brand}>
-            <Layers size={32} color="#3b82f6" />
-            <h1 style={styles.title}>Glass Bead <span style={{color: '#3b82f6'}}>AI</span></h1>
-          </div>
-          <p style={styles.subtitle}>Transforming complexity into intuition</p>
+          <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} style={styles.brand}>
+            <div style={styles.logoCircle}><Layers size={24} color="#fff" /></div>
+            <h1 style={styles.title}>Glass Bead <span style={{ color: '#60a5fa', fontWeight: '400' }}>AI</span></h1>
+          </motion.div>
+          <p style={styles.subtitle}>Bridging technical concepts through structural metaphors</p>
         </header>
 
         <div style={styles.inputRow}>
           <div style={styles.searchWrapper}>
+            <Search size={18} color="#475569" />
             <input
               style={styles.input}
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="Search a concept (e.g. Entropy)..."
+              placeholder="Type a concept to synthesize..."
               onKeyDown={(e) => e.key === 'Enter' && exploreTopic()}
             />
             <button style={styles.button} onClick={() => exploreTopic()} disabled={loading}>
-              {loading ? "..." : <ArrowRight size={20} />}
+              {loading ? <Cpu className="animate-spin" size={18}/> : <ArrowRight size={18} />}
             </button>
           </div>
         </div>
 
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {!loading && data && (
-            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} style={styles.contentLayout}>
+            <motion.div 
+              key={topic}
+              initial={{ opacity: 0, y: 30 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95 }}
+              style={styles.contentLayout}
+            >
               <div style={styles.cardSection}>
                 {selectedElement && (
                   <div style={styles.storyCard}>
                     <div style={styles.cardTop}>
-                      <span style={{...styles.badge, color: DOMAIN_COLORS[selectedElement.domain] || '#64748b'}}>
+                      <span style={{ ...styles.badge, color: DOMAIN_COLORS[selectedElement.domain] || '#94a3b8', border: `1px solid ${DOMAIN_COLORS[selectedElement.domain] || '#94a3b8'}` }}>
                         {selectedElement.domain}
                       </span>
                       <button onClick={saveToLibrary} style={styles.saveBtn}>
-                        <Bookmark size={20} fill={library.some(i => i.topic === topic) ? "#3b82f6" : "none"} />
+                        <Bookmark size={20} fill={library.some(i => i.topic === topic) ? "#60a5fa" : "none"} color={library.some(i => i.topic === topic) ? "#60a5fa" : "#94a3b8"} />
                       </button>
                     </div>
                     <h2 style={styles.cardTitle}>{selectedElement.label}</h2>
                     <p style={styles.storyText}>{selectedElement.content}</p>
                     {selectedElement.id !== 'main' && (
                       <button style={styles.expandButton} onClick={() => exploreTopic(selectedElement.label, data.nodes[0].label)}>
-                        Dive Deeper <ArrowRight size={16} />
+                        Dive Deeper <Zap size={14} />
                       </button>
                     )}
                   </div>
@@ -220,39 +257,56 @@ function App() {
               </div>
 
               <div style={styles.graphSection}>
-                <div id="graph" style={styles.graphCanvas} />
-                <div style={styles.graphHint}><Zap size={14} /> Tap nodes to reveal their hidden logic</div>
+                <div style={{ position: 'relative' }}>
+                  <div id="graph" style={styles.graphCanvas} />
+                  
+                  {/* 🔥 THE MAGNIFICATION TOOLTIP */}
+                  {tooltip.show && (
+                    <div 
+                      className="edge-tooltip"
+                      style={{ 
+                        left: tooltip.x,
+                        top: tooltip.y
+                      }}
+                    >
+                      <Zap size={14} color="#60a5fa" />
+                      {tooltip.text}
+                    </div>
+                  )}
+                </div>
+                <div style={styles.graphHint}><Sparkles size={12} /> Hover edges to magnify connections</div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {loading && <div style={styles.loader}><Sparkles className="animate-spin" /> Synthesizing Knowledge...</div>}
+        {loading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.loader}>
+            <p>Weaving knowledge beads...</p>
+          </motion.div>
+        )}
 
         {!loading && library.length > 0 && (
           <div style={styles.libraryContainer}>
-            <div style={styles.libHeader}><BookOpen size={20} /> Your Intuition Vault</div>
+            <div style={styles.libHeader}><BookOpen size={18} /> INTUITION VAULT</div>
             <div style={styles.libraryGrid}>
               {library.map((item) => (
                 <motion.div 
-                  whileHover={{y: -5}} 
+                  whileHover={{ y: -8, boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }} 
                   key={item.id} 
                   style={styles.miniCard}
-                  onClick={() => handleVaultClick(item)} // 🔥 FIX: USE HANDLER
+                  onClick={() => handleVaultClick(item)}
                 >
                   <div style={styles.miniCardHeader}>
-                    <small>{item.domain}</small>
+                    <small style={{ color: DOMAIN_COLORS[item.domain] }}>{item.domain}</small>
                     <Trash2 
                       size={14} 
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent loading when deleting
-                        removeFromLibrary(item.id);
-                      }} 
-                      style={{cursor:'pointer'}}
+                      onClick={(e) => { e.stopPropagation(); removeFromLibrary(item.id); }} 
+                      style={{ cursor: 'pointer', color: '#475569' }}
                     />
                   </div>
-                  <h3>{item.topic}</h3>
-                  <button style={styles.viewBtn}>Revisit Metaphor</button>
+                  <h3 style={styles.miniCardTitle}>{item.topic}</h3>
+                  <div style={styles.revisit}>Open Metaphor →</div>
                 </motion.div>
               ))}
             </div>
@@ -264,35 +318,38 @@ function App() {
 }
 
 const styles = {
-  page: { background: "#f8fafc", minHeight: "100vh", position: "relative", overflowX: "hidden", fontFamily: "'Plus Jakarta Sans', sans-serif" },
-  blob1: { position: "absolute", width: "600px", height: "600px", background: "radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)", top: "-200px", left: "-100px", zIndex: 0 },
-  blob2: { position: "absolute", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)", bottom: "-100px", right: "-100px", zIndex: 0 },
-  container: { padding: "3rem 2rem", maxWidth: "1300px", margin: "0 auto", position: "relative", zIndex: 1 },
-  header: { textAlign: "center", marginBottom: "3rem" },
-  brand: { display: "flex", alignItems: "center", justifyContent: "center", gap: "15px", marginBottom: "0.5rem" },
-  title: { fontSize: "3.5rem", fontWeight: "800", letterSpacing: "-2px", color: "#0f172a", margin: 0 },
-  subtitle: { color: "#64748b", fontSize: "1.1rem" },
-  searchWrapper: { display: "flex", background: "#fff", padding: "8px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0", width: "500px" },
-  inputRow: { display: "flex", justifyContent: "center", marginBottom: "4rem" },
-  input: { flex: 1, border: "none", outline: "none", padding: "0 15px", fontSize: "1rem" },
-  button: { background: "#0f172a", color: "#fff", border: "none", padding: "12px", borderRadius: "15px", cursor: "pointer" },
-  contentLayout: { display: "grid", gridTemplateColumns: "420px 1fr", gap: "2.5rem" },
-  storyCard: { background: "rgba(255, 255, 255, 0.8)", backdropFilter: "blur(12px)", padding: "2.5rem", borderRadius: "30px", border: "1px solid #fff", boxShadow: "0 20px 50px rgba(0,0,0,0.05)" },
-  cardTop: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  badge: { fontSize: "0.7rem", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.1em" },
-  cardTitle: { fontSize: "2.2rem", fontWeight: "800", color: "#0f172a", margin: "1rem 0" },
-  storyText: { lineHeight: "1.8", color: "#475569", fontSize: "1.1rem" },
-  saveBtn: { background: "none", border: "none", cursor: "pointer", color: "#3b82f6" },
-  expandButton: { marginTop: "2rem", width: "100%", padding: "12px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: "12px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" },
-  graphCanvas: { height: "600px", background: "rgba(255,255,255,0.5)", backdropFilter: "blur(5px)", borderRadius: "30px", border: "1px solid #fff", boxShadow: "0 10px 30px rgba(0,0,0,0.03)" },
-  graphHint: { textAlign: "center", marginTop: "1rem", color: "#94a3b8", fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" },
-  libraryContainer: { marginTop: "6rem", background: "rgba(255,255,255,0.4)", padding: "3rem", borderRadius: "40px", border: "1px solid #e2e8f0" },
-  libHeader: { fontSize: "1.5rem", fontWeight: "800", marginBottom: "2rem", display: "flex", alignItems: "center", gap: "12px" },
-  libraryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.5rem" },
-  miniCard: { background: "#fff", padding: "1.5rem", borderRadius: "20px", boxShadow: "0 4px 10px rgba(0,0,0,0.03)", cursor: "pointer" },
-  miniCardHeader: { display: "flex", justifyContent: "space-between", color: "#94a3b8", marginBottom: "1rem" },
-  viewBtn: { background: "none", border: "none", color: "#3b82f6", fontWeight: "700", cursor: "pointer", padding: 0, marginTop: "1rem" },
-  loader: { textAlign: "center", padding: "5rem", fontSize: "1.2rem", color: "#3b82f6", fontWeight: "600" }
+  page: { background: "#020617", minHeight: "100vh", position: "relative", overflowX: "hidden", fontFamily: "'Inter', sans-serif", color: "#f8fafc" },
+  aurora1: { position: "absolute", width: "800px", height: "600px", background: "radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)", top: "-100px", left: "-200px", zIndex: 0, filter: "blur(60px)" },
+  aurora2: { position: "absolute", width: "600px", height: "600px", background: "radial-gradient(circle, rgba(168,85,247,0.1) 0%, transparent 70%)", bottom: "-100px", right: "-100px", zIndex: 0, filter: "blur(80px)" },
+  container: { padding: "4rem 2rem", maxWidth: "1400px", margin: "0 auto", position: "relative", zIndex: 1 },
+  header: { textAlign: "center", marginBottom: "4rem" },
+  brand: { display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginBottom: "1rem" },
+  logoCircle: { background: "#0f172a", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.1)" },
+  title: { fontSize: "3rem", fontWeight: "900", letterSpacing: "-0.05em", margin: 0 },
+  subtitle: { color: "#94a3b8", fontSize: "1rem" },
+  searchWrapper: { display: "flex", alignItems: "center", background: "rgba(15, 23, 42, 0.6)", padding: "6px 10px 6px 20px", borderRadius: "100px", border: "1px solid rgba(255,255,255,0.1)", width: "550px", backdropFilter: "blur(10px)" },
+  inputRow: { display: "flex", justifyContent: "center", marginBottom: "5rem" },
+  input: { flex: 1, border: "none", outline: "none", background: "none", color: "#fff", fontSize: "1rem", padding: "10px" },
+  button: { background: "#fff", color: "#000", border: "none", width: "45px", height: "45px", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+  contentLayout: { display: "grid", gridTemplateColumns: "450px 1fr", gap: "3rem", alignItems: "start" },
+  cardSection: { position: "sticky", top: "2rem" },
+  storyCard: { background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(20px)", padding: "3rem", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" },
+  cardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" },
+  badge: { fontSize: "0.65rem", fontWeight: "900", padding: "4px 12px", borderRadius: "20px", textTransform: "uppercase" },
+  cardTitle: { fontSize: "2.8rem", fontWeight: "900", color: "#fff", margin: "0 0 1.5rem 0" },
+  storyText: { lineHeight: "1.8", color: "#94a3b8", fontSize: "1.1rem" },
+  saveBtn: { background: "none", border: "none", cursor: "pointer" },
+  expandButton: { marginTop: "2.5rem", width: "100%", padding: "14px", background: "#fff", color: "#000", border: "none", borderRadius: "16px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" },
+  graphCanvas: { height: "650px", background: "rgba(15, 23, 42, 0.4)", backdropFilter: "blur(5px)", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.05)" },
+  graphHint: { textAlign: "center", marginTop: "1.5rem", color: "#475569", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" },
+  libraryContainer: { marginTop: "8rem", background: "rgba(15, 23, 42, 0.3)", padding: "4rem 3rem", borderRadius: "48px", border: "1px solid rgba(255,255,255,0.05)" },
+  libHeader: { fontSize: "0.8rem", fontWeight: "900", marginBottom: "3rem", color: "#64748b", letterSpacing: "0.2em", display: "flex", alignItems: "center", gap: "10px" },
+  libraryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "2rem" },
+  miniCard: { background: "#0f172a", padding: "2rem", borderRadius: "24px", border: "1px solid rgba(255,255,255,0.05)", cursor: "pointer" },
+  miniCardHeader: { display: "flex", justifyContent: "space-between", marginBottom: "1.5rem" },
+  miniCardTitle: { fontSize: "1.3rem", fontWeight: "800", margin: 0, color: "#fff" },
+  revisit: { color: "#60a5fa", fontSize: "0.85rem", marginTop: "1.5rem", fontWeight: "700" },
+  loader: { textAlign: "center", padding: "10rem", color: "#60a5fa", fontSize: "1.1rem", fontWeight: "700" }
 };
 
 export default App;
