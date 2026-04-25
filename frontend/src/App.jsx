@@ -62,7 +62,7 @@ function App() {
     if (!searchTopic) return;
     setLoading(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/explore", {
+      const response = await fetch("https://glass-bead-ai.onrender.com", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: searchTopic, context: context }),
