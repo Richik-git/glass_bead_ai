@@ -66,7 +66,7 @@ function App() {
     
     try {
       // 🚨 DOUBLE CHECK THIS URL: Must be HTTPS and end with /explore
-      const response = await fetch("https://your-render-app-name.onrender.com/explore", {
+      const response = await fetch("https://glass-bead-ai.onrender.com/explore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: searchTopic, context: context }),
