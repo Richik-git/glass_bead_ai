@@ -246,7 +246,7 @@ function App() {
         </div>
 
         <AnimatePresence mode="wait">
-          {!loading && data && data.nodes && data.nodes.length > 0 ? (
+          {(!loading && data?.nodes?.length > 0) ? (
             <motion.div 
               key={topic}
               initial={{ opacity: 0, y: 30 }} 
@@ -279,16 +279,8 @@ function App() {
               <div style={styles.graphSection}>
                 <div style={{ position: 'relative' }}>
                   <div id="graph" style={styles.graphCanvas} />
-                  
-                  {/* 🔥 THE MAGNIFICATION TOOLTIP */}
                   {tooltip.show && (
-                    <div 
-                      className="edge-tooltip"
-                      style={{ 
-                        left: tooltip.x,
-                        top: tooltip.y
-                      }}
-                    >
+                    <div className="edge-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
                       <Zap size={14} color="#60a5fa" />
                       {tooltip.text}
                     </div>
@@ -297,6 +289,11 @@ function App() {
                 <div style={styles.graphHint}><Sparkles size={12} /> Hover edges to magnify connections</div>
               </div>
             </motion.div>
+          ) : !loading && (
+            <div style={styles.emptyState}>
+                <Sparkles size={48} color="#1e293b" />
+                <p>Knowledge beads are waiting to be connected...</p>
+            </div>
           )}
         </AnimatePresence>
 
