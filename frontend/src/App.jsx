@@ -60,20 +60,40 @@ function App() {
   const exploreTopic = async (targetTopic = topic, context = null) => {
     const searchTopic = targetTopic || topic;
     if (!searchTopic) return;
+    
     setLoading(true);
+    setData(null); // Clear old data to prevent ghost rendering
+    
     try {
-      const response = await fetch("https://glass-bead-ai.onrender.com", {
+      // 🚨 DOUBLE CHECK THIS URL: Must be HTTPS and end with /explore
+      const response = await fetch("https://your-render-app-name.onrender.com/explore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: searchTopic, context: context }),
       });
+      
       const result = await response.json();
-      setData(result);
-      setTopic(searchTopic);
-      setSelectedElement({ 
-        id: 'main', label: result.nodes[0].label, domain: "Core Concept", content: result.story 
-      });
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+      
+      // Safety Check: Only set data if it has the structure we expect
+      if (result && result.nodes && result.nodes.length > 0) {
+        setData(result);
+        setTopic(searchTopic);
+        setSelectedElement({ 
+          id: 'main', 
+          label: result.nodes[0].label, 
+          domain: "Core Concept", 
+          content: result.story 
+        });
+      } else {
+        console.error("Malformed data received:", result);
+        alert("Received incomplete data from AI.");
+      }
+    } catch (err) {
+      console.error("Fetch Error:", err);
+      alert("Backend connection failed. Check if Render is awake!");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -226,7 +246,7 @@ function App() {
         </div>
 
         <AnimatePresence mode="wait">
-          {!loading && data && (
+          {!loading && data && data.nodes && data.nodes.length > 0 ? (
             <motion.div 
               key={topic}
               initial={{ opacity: 0, y: 30 }} 
